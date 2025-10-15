@@ -7,7 +7,7 @@ import (
 	"io"
 	"reflect"
 
-	"gitlab.com/efronlicht/ezjson"
+	"github.com/grene-labs/grene/ezjson"
 )
 
 // KeyJSONBody is a constant used to represent the JSON body in error messages.

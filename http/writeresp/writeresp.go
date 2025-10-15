@@ -32,7 +32,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/nervus-labs/nervus-protocol/trace"
+	"github.com/grene-labs/grene/trace"
 )
 
 // Response is the structure of the JSON response sent to the client.

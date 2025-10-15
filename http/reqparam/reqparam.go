@@ -17,8 +17,8 @@ import (
 	"reflect"
 	"runtime/debug"
 
-	"github.com/dora-network/dora/http/writeresp"
-	"github.com/dora-network/dora/logger"
+	"github.com/grene-labs/grene/http/writeresp"
+	"github.com/grene-labs/grene/logger"
 )
 
 // CatchMustMiddleware catches panics from MustPath, MustQuery, MustHeader, and MustBody, giving a 400 Bad Request response.
