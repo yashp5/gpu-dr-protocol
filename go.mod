@@ -1,4 +1,4 @@
-module github.com/nervus-labs/nervus-protocol
+module github.com/grene-labs/grene
 
 go 1.25.1
 
