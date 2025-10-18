@@ -176,7 +176,6 @@ func (w *recordingResponseWriter) WriteHeader(code int) {
 
 // Unwrap returns the original ResponseWriter, allowing access to the underlying writer if needed.
 // This is necessary for websocket support so we can get to the underlying http.Hijacker.
-// See DORA-3420 for an example of where this crops up.
 func (w *recordingResponseWriter) Unwrap() http.ResponseWriter { return w.inner }
 
 // Write the response body, recording the number of bytes written & then forwarding to the original ResponseWriter.

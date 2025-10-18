@@ -93,10 +93,10 @@ func callerMetadata() metadata {
 	}
 }
 
-// trims a function path containing "dora/enve", making it start with "enve".
-// EG, "users/dora/go/src/github.com/dora/enve/parse.Duration" => "enve/parse.Duration".
+// trims a function path containing "grene/enve", making it start with "enve".
+// EG, "users/grene/go/src/github.com/grene/enve/parse.Duration" => "enve/parse.Duration".
 func trim(s string) string {
-	if _, after, ok := strings.Cut(s, "dora/"); ok && strings.HasPrefix(after, "enve") {
+	if _, after, ok := strings.Cut(s, "grene/"); ok && strings.HasPrefix(after, "enve") {
 		return after
 	}
 	return s

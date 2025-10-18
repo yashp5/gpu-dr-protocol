@@ -23,7 +23,7 @@
         }
       },
       "queries": [
-        "./queries.sql"
+        "./query.sql"
       ],
       "schema": "./schema.sql",
       "strict_order_by": true

@@ -63,8 +63,8 @@ const (
 )
 
 var (
-	idPrefix  = enve.StringOr("TRACE_ID_PREFIX", enve.StringOr("DORA_ENV", ""))
-	reqPrefix = enve.StringOr("REQUEST_ID_PREFIX", enve.StringOr("DORA_ENV", ""))
+	idPrefix  = enve.StringOr("TRACE_ID_PREFIX", enve.StringOr("PROTOCOL_ENV", ""))
+	reqPrefix = enve.StringOr("REQUEST_ID_PREFIX", enve.StringOr("PROTOCOL_ENV", ""))
 )
 
 // SaveHTTPHeader saves the TraceID and RequestID to the http.Header.
