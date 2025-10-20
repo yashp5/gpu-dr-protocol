@@ -132,7 +132,7 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 	}()
 	time.Sleep(15 * time.Millisecond)
 
-	logger.Info("DORA server started")
+	logger.Info("Grene protocol started")
 
 	return server, cleanup, nil
 }

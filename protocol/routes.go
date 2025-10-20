@@ -27,7 +27,6 @@ import (
 	"github.com/grene-labs/grene/logger"
 	"github.com/grene-labs/grene/openapi"
 	"github.com/grene-labs/grene/trace"
-	"github.com/grene-labs/grene/user"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/klauspost/compress/zstd"
 )
@@ -166,21 +165,21 @@ func buildHTTPRouter(
 			Description: "Get a count of queries by function",
 		},
 		// Users
-		{
-			Method:       http.MethodPost,
-			Path:         "/v1/user",
-			Handler:      user.Create(db),
-			Description:  "Create a new user",
-			AllowedRoles: auth.RoleAdmin,
-		},
-		{
-			Method:       http.MethodGet,
-			Path:         "/v1/user/{user_id}",
-			Handler:      user.GetByID(q.GetUserByID),
-			CacheTTL:     5 * time.Second,
-			Description:  "Get user info by user id",
-			AllowedRoles: auth.RoleAdmin,
-		},
+		// {
+		// 	Method:       http.MethodPost,
+		// 	Path:         "/v1/user",
+		// 	Handler:      user.Create(db),
+		// 	Description:  "Create a new user",
+		// 	AllowedRoles: auth.RoleAdmin,
+		// },
+		// {
+		// 	Method:       http.MethodGet,
+		// 	Path:         "/v1/user/{user_id}",
+		// 	Handler:      user.GetByID(q.GetUserByID),
+		// 	CacheTTL:     5 * time.Second,
+		// 	Description:  "Get user info by user id",
+		// 	AllowedRoles: auth.RoleAdmin,
+		// },
 	}
 
 	// build an extra route, /, that returns the list of routes.
@@ -254,7 +253,7 @@ func buildHTTPRouter(
 		}
 		// Always enforce role checks; in BELIEVE_CLIENT mode, inject user (if any) before checking roles.
 		h = auth.CheckUserRoleMiddleware(h, route.AllowedRoles)
-		if enve.StringOr("DORA_AUTH", "true") == "BELIEVE_CLIENT" {
+		if enve.StringOr("PROTOCOL_AUTH", "true") == "BELIEVE_CLIENT" {
 			h = auth.BelieveClientAboutUserMiddleware(h, q.GetUserByID)
 		}
 
@@ -306,10 +305,10 @@ func buildHTTPRouter(
 			0: mw1(trace.ServerMiddleware),
 			1: mw3(
 				logger.ServerMiddleware, log, logger.MiddlewareConfig{
-					Req:     enve.Or(logOr, "DORA_LOG_LEVEL_HTTP_REQ", slog.LevelDebug),
-					Resp2xx: enve.Or(logOr, "DORA_LOG_LEVEL_HTTP_RESP_2XX", slog.LevelInfo),
-					Resp3xx: enve.Or(logOr, "DORA_LOG_LEVEL_HTTP_RESP_3XX", slog.LevelInfo),
-					Resp4xx: enve.Or(logOr, "DORA_LOG_LEVEL_HTTP_RESP_4XX", slog.LevelWarn),
+					Req:     enve.Or(logOr, "PROTOCOL_LOG_LEVEL_HTTP_REQ", slog.LevelDebug),
+					Resp2xx: enve.Or(logOr, "PROTOCOL_LOG_LEVEL_HTTP_RESP_2XX", slog.LevelInfo),
+					Resp3xx: enve.Or(logOr, "PROTOCOL_LOG_LEVEL_HTTP_RESP_3XX", slog.LevelInfo),
+					Resp4xx: enve.Or(logOr, "PROTOCOL_LOG_LEVEL_HTTP_RESP_4XX", slog.LevelWarn),
 				},
 			),
 			2: mw1(panicHandlerMiddleware),
@@ -317,9 +316,9 @@ func buildHTTPRouter(
 			4: mw1(cors.AllowAll().Handler),
 			5: mw3(serverCompressResponsesMiddleware, gzip.DefaultCompression, zstd.SpeedDefault),
 
-			/* TODO: DORA-3846: pick values for these and enable them.
-			6: mw3(ratelimit.MiddlewareByUser, enve.IntOr("DORA_HTTP_RATE_LIMIT_PER_USER", 100), time.Tick(enve.DurationOr("DORA_HTTP_PER_USER_RATE_LIMIT_TICK", time.Minute))),
-			7: mw3(ratelimit.MiddlewareByRemoteAddr, enve.IntOr("DORA_HTTP_RATE_LIMIT_PER_IP", 500), time.Tick(enve.DurationOr("DORA_HTTP_PER_IP_RATE_LIMIT_TICK", time.Minute))),
+			/* TODO: pick values for these and enable them.
+			6: mw3(ratelimit.MiddlewareByUser, enve.IntOr("PROTOCOL_HTTP_RATE_LIMIT_PER_USER", 100), time.Tick(enve.DurationOr("PROTOCOL_HTTP_PER_USER_RATE_LIMIT_TICK", time.Minute))),
+			7: mw3(ratelimit.MiddlewareByRemoteAddr, enve.IntOr("PROTOCOL_HTTP_RATE_LIMIT_PER_IP", 500), time.Tick(enve.DurationOr("PROTOCOL_HTTP_PER_IP_RATE_LIMIT_TICK", time.Minute))),
 			*/
 		}
 		for i, j := 0, len(middleware)-1; i < j; i, j = i+1, j-1 {
@@ -354,13 +353,13 @@ func getfunclabel(v any, args ...any) string {
 	if f == nil {
 		return fmt.Sprintf("unknown %T %v", v, v)
 	}
-	name := strings.TrimPrefix(f.Name(), "github.com/dora-network/")
+	name := strings.TrimPrefix(f.Name(), "github.com/grene-labs/")
 	entry := f.Entry()
 	file, line := f.FileLine(0)
 	if file == "" || line == 0 {
 		file, line = f.FileLine(entry)
 	}
-	file = strings.TrimPrefix(file, "github.com/dora-network/dora/")
+	file = strings.TrimPrefix(file, "github.com/grene-labs/grene/")
 	var buf strings.Builder
 	fmt.Fprintf(&buf, "%s (%#x) @ %s:%d", name, entry, file, line)
 	if len(args) == 0 {

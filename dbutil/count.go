@@ -172,7 +172,7 @@ func caller(c *Count, sql string) (caller Caller) {
 		if !ok {
 			break
 		}
-		if strings.HasPrefix(frame.Function, "github.com/dora-network/dora/dbutil.") {
+		if strings.HasPrefix(frame.Function, "github.com/grene-labs/grene/dbutil.") {
 			continue // skip dbutil package functions.
 		}
 		if strings.HasPrefix(frame.Function, "github.com/jackc/pgx/v5.") {
@@ -182,8 +182,8 @@ func caller(c *Count, sql string) (caller Caller) {
 			continue // skip sqlc package functions.
 		}
 		caller.Fileline = fmt.Sprintf("%s:%d", frame.File, frame.Line)
-		if _, after, ok := strings.Cut(caller.Fileline, "dora-network/"); ok {
-			caller.Fileline = after // trim the dora prefix.
+		if _, after, ok := strings.Cut(caller.Fileline, "grene-labs/"); ok {
+			caller.Fileline = after // trim the grene prefix.
 		}
 		caller.Fileline = unique.Make(caller.Fileline).Value() // since we just created this string, make sure it's unique so as to not have huge memory usage storing different copies of the same string.
 		caller.Func = frame.Function
@@ -192,7 +192,7 @@ func caller(c *Count, sql string) (caller Caller) {
 			caller.Func = "unknown"
 		}
 		// trim the package path from the function name.
-		if _, after, ok := strings.Cut(caller.Func, "dora-network/"); ok {
+		if _, after, ok := strings.Cut(caller.Func, "grene-labs/"); ok {
 			caller.Func = after
 		}
 		c.inc(caller)

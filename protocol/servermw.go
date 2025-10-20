@@ -176,7 +176,6 @@ func serverCompressResponsesMiddleware(next http.Handler, gzipLevel int, zstdLev
 
 // Unwrap returns the underlying ResponseWriter, allowing access to the original writer.
 // This is necessary for websocket support so we can get to the underlying http.Hijacker.
-// See DORA-3420 for an example of where this crops up.
 func (w *compressingResponseWriter) Unwrap() http.ResponseWriter {
 	return w.underlying
 }

@@ -67,7 +67,7 @@ func PoolStatToResponse(s *pgxpool.Stat) PoolStatResponse {
 
 // DialEmbeddedPool returns a connection pool to an embedded postgres instance.
 // - try to connect to postgres with user, db, password all 'postgres' on the default postgres port (5432).
-// either way, then CREATE IF NOT EXISTS a database named dora_test_xxxxxxxx where xxxxxxxx is random hex.
+// either way, then CREATE IF NOT EXISTS a database named grene_test_xxxxxxxx where xxxxxxxx is random hex.
 // then connect to that database with a connection pool, create the schemas, indices, etc.
 // the returned stop function will drop the database and stop the embedded postgres instance if we started it.
 //
@@ -86,7 +86,7 @@ WARNING: this is a sledgehammer that will kill all postgres instances on that ma
 			})
 		}
 	}()
-	dbname := fmt.Sprintf("dora_test_%08x", rand.Uint())
+	dbname := fmt.Sprintf("grene_test_%08x", rand.Uint())
 	log := logger.FromCtx(ctx).WithGroup("db").With("name", dbname)
 
 	url := embeddedpostgres.DefaultConfig().GetConnectionURL()
@@ -120,7 +120,7 @@ WARNING: this is a sledgehammer that will kill all postgres instances on that ma
 			goto CREATE_DB
 		}
 		log.Info("could not connect to existing postgres instance, starting embedded", "url", url, "err", err)
-		lock := filepath.Join(os.TempDir(), "dora/lock/embedded_postgres.lock")
+		lock := filepath.Join(os.TempDir(), "grene/lock/embedded_postgres.lock")
 		_ = os.MkdirAll(filepath.Dir(lock), 0o755)
 		mux, err := filemutex.New(lock)
 		if err != nil {
