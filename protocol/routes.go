@@ -16,28 +16,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dora-network/dora/auth"
-	"github.com/dora-network/dora/cache"
-	"github.com/dora-network/dora/conndbg"
-	"github.com/dora-network/dora/dbutil"
-	"github.com/dora-network/dora/enve"
-	"github.com/dora-network/dora/generated/sqlc"
-	"github.com/dora-network/dora/http/reqparam"
-	"github.com/dora-network/dora/http/writeresp"
-	"github.com/dora-network/dora/logger"
-	"github.com/dora-network/dora/openapi"
-	"github.com/dora-network/dora/trace"
-	"github.com/dora-network/dora/user"
 	"github.com/go-chi/cors"
+	"github.com/grene-labs/grene/auth"
+	"github.com/grene-labs/grene/cache"
+	"github.com/grene-labs/grene/dbutil"
+	"github.com/grene-labs/grene/enve"
+	"github.com/grene-labs/grene/generated/sqlc"
+	"github.com/grene-labs/grene/http/reqparam"
+	"github.com/grene-labs/grene/http/writeresp"
+	"github.com/grene-labs/grene/logger"
+	"github.com/grene-labs/grene/openapi"
+	"github.com/grene-labs/grene/trace"
+	"github.com/grene-labs/grene/user"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/klauspost/compress/zstd"
 )
 
-// build the router. see /../../api.md for the spec.
-// TODO: we will eventually want to split out our websocket routes entirely and use a different server & port for them,
-// especially since they are likely to want different middleware.
-// for now (2025-08-05, that's out of scope.)
-
+// build the router
 func buildHTTPRouter(
 	log *slog.Logger,
 	db interface {
@@ -80,16 +75,6 @@ func buildHTTPRouter(
 		// Debug
 		{
 			Method: "GET",
-			Path:   "/v1/debug/connstats",
-			Handler: http.HandlerFunc(
-				func(w http.ResponseWriter, r *http.Request) {
-					writeresp.JSONData(r.Context(), w, conndbg.DumpStats(), http.StatusOK)
-				},
-			),
-			Description: "debug websocket statistics endpoint",
-		},
-		{
-			Method: "GET",
 			Path:   "/v1/debug/pid",
 			Handler: http.HandlerFunc(
 				func(w http.ResponseWriter, r *http.Request) {
@@ -122,37 +107,37 @@ func buildHTTPRouter(
 			Method:       "GET",
 			Path:         "/v1/debug/pprof/block",
 			Handler:      pprof.Handler("block"),
-			AllowedRoles: auth.RoleAdminPowers,
+			AllowedRoles: auth.RoleAdmin,
 		},
 		{
 			Method:       "GET",
 			Path:         "/v1/debug/pprof/cmdline",
 			Handler:      pprof.Handler("cmdline"),
-			AllowedRoles: auth.RoleAdminPowers,
+			AllowedRoles: auth.RoleAdmin,
 		},
 		{
 			Method:       "GET",
 			Path:         "/v1/debug/pprof/goroutine",
 			Handler:      pprof.Handler("goroutine"),
-			AllowedRoles: auth.RoleAdminPowers,
+			AllowedRoles: auth.RoleAdmin,
 		},
 		{
 			Method:       "GET",
 			Path:         "/v1/debug/pprof/heap",
 			Handler:      pprof.Handler("heap"),
-			AllowedRoles: auth.RoleAdminPowers,
+			AllowedRoles: auth.RoleAdmin,
 		},
 		{
 			Method:       "GET",
 			Path:         "/v1/debug/pprof/profile",
 			Handler:      http.HandlerFunc(pprof.Profile),
-			AllowedRoles: auth.RoleAdminPowers,
+			AllowedRoles: auth.RoleAdmin,
 		},
 		{
 			Method:       "GET",
 			Path:         "/v1/debug/pprof/threadcreate",
 			Handler:      pprof.Handler("threadcreate"),
-			AllowedRoles: auth.RoleAdminPowers,
+			AllowedRoles: auth.RoleAdmin,
 		},
 
 		// DB: count by fileline, func, sql, caller
@@ -186,7 +171,7 @@ func buildHTTPRouter(
 			Path:         "/v1/user",
 			Handler:      user.Create(db),
 			Description:  "Create a new user",
-			AllowedRoles: auth.RolePublic,
+			AllowedRoles: auth.RoleAdmin,
 		},
 		{
 			Method:       http.MethodGet,
@@ -194,7 +179,7 @@ func buildHTTPRouter(
 			Handler:      user.GetByID(q.GetUserByID),
 			CacheTTL:     5 * time.Second,
 			Description:  "Get user info by user id",
-			AllowedRoles: auth.RoleAdminPowers,
+			AllowedRoles: auth.RoleAdmin,
 		},
 	}
 

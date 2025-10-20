@@ -213,10 +213,6 @@ CREATE_DB: // 2. Create a DB
 	}{
 		// DO NOT REORDER
 		{"schema", schema, &watch.schema},
-		{"bots", bots, &watch.bots},
-		{"latest_view", latestView, &watch.latest_view},
-		{"view", view, &watch.view},
-		{"index", index, &watch.index},
 	}
 	for i := range schemas {
 		if _, err = pool.Exec(ctx, schemas[i].content); err != nil {

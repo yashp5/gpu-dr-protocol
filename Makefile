@@ -43,6 +43,10 @@ gensqlc: godeps
 	# ----- create go files in generated/sqlc/ -----
 	go tool sqlc generate
 	# --- make gensqlc: end ---
+	# copy the schema files to dbutil so we can embed them into the binary and use them to
+	# spin up the embedded database.
+	#
+	./copysql.bash . dbutil
 
 # download go dependencies and tools.
 godeps: check-go

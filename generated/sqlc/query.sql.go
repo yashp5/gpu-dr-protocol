@@ -34,11 +34,11 @@ RETURNING
 `
 
 type CreateUserParams struct {
-	Email string        `json:"email"`
-	ID    pgtype.UUID   `json:"id"`
-	Name  string        `json:"name"`
-	Roles []interface{} `json:"roles"`
-	Tz    string        `json:"tz"`
+	Email string      `json:"email"`
+	ID    pgtype.UUID `json:"id"`
+	Name  string      `json:"name"`
+	Roles []UserRole  `json:"roles"`
+	Tz    string      `json:"tz"`
 }
 
 type CreateUserRow struct {
@@ -105,7 +105,7 @@ type GetUserByIDRow struct {
 	DisabledAt pgtype.Timestamp `json:"disabled_at"`
 	Email      string           `json:"email"`
 	Name       string           `json:"name"`
-	Roles      []interface{}    `json:"roles"`
+	Roles      []UserRole       `json:"roles"`
 	Tz         string           `json:"tz"`
 	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
 	VerifiedAt pgtype.Timestamp `json:"verified_at"`

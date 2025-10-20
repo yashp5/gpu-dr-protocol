@@ -1,0 +1,15 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Grene",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "https://localhost:8084",
+            "description": "local Grene server"
+        }
+    ],
+    "paths": [],
+    "components": []
+}

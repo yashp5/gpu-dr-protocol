@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/grene-labs/grene/cache"
 	"github.com/grene-labs/grene/logger"
 
 	"github.com/grene-labs/grene/dbutil"
-	"github.com/grene-labs/grene/generated/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -57,9 +57,9 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 	logger.Info("init cache")
 	{ // init cache
 		var (
-			cleanup = enve.DurationOr("DORA_CACHE_CLEANUP_INTERVAL", 10*time.Minute)
-			cutoff  = enve.DurationOr("DORA_CACHE_CLEANUP_CUTOFF_AGE", 15*time.Minute)
-			target  = enve.IntOr("DORA_CACHE_TARGET_SIZE", 100*1024*1024)
+			cleanup = enve.DurationOr("PROTOCOL_CACHE_CLEANUP_INTERVAL", 10*time.Minute)
+			cutoff  = enve.DurationOr("PROTOCOL_CACHE_CLEANUP_CUTOFF_AGE", 15*time.Minute)
+			target  = enve.IntOr("PROTOCOL_CACHE_TARGET_SIZE", 100*1024*1024)
 		)
 		responseCache, _ = cache.NewJSONResponse(
 			cleanup,
@@ -72,10 +72,10 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 	var db *dbutil.LogDB
 	logger.Info("init DB")
 	{ // init DB: either embedded (default) or via google cloud...
-		ctx, cancel := context.WithTimeout(ctx, enve.DurationOr("DORA_DB_INIT_TIMEOUT", 30*time.Second))
+		ctx, cancel := context.WithTimeout(ctx, enve.DurationOr("PROTOCOL_DB_INIT_TIMEOUT", 30*time.Second))
 		defer cancel()
 		var pool *pgxpool.Pool
-		if enve.BoolOr("DORA_USE_EMBEDDED_DB", true) {
+		if enve.BoolOr("PROTOCOL_USE_EMBEDDED_DB", true) {
 			var err error
 			pool, err = dbutil.DialEmbeddedPool(ctx)
 			if err != nil {
@@ -92,29 +92,22 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 			cleanup = append(cleanup, func() error { pool.Close(); return nil })
 		}
 		db = dbutil.NewLogDB(pool, logger, nil)
-
-		if enve.BoolOr("DORA_USE_EMBEDDED_DB", true) || enve.BoolOr("DORA_RUN_E2E_TESTS", false) {
-			if err := testutils.InitAdminAndUsdAsset(ctx, sqlc.New(db), logger); err != nil {
-				return nil, nil, fmt.Errorf("init DB: could not initialize admin user and USD asset: %w", err)
-			}
-		}
 	}
 
 	logger.Info("init server")
 	// init server
 	{
-		addr := enve.StringOr("DORA_HTTP_SERVE_ADDR", ":8084")
-		readtimeout := enve.DurationOr("DORA_HTTP_READ_TIMEOUT", 10*time.Second)
-		writetimeout := enve.DurationOr("DORA_HTTP_WRITE_TIMEOUT", 360*time.Second)
-		idletimeout := enve.DurationOr("DORA_HTTP_IDLE_TIMEOUT", 180*time.Second)
-		failsafeTimeout := enve.DurationOr("DORA_HTTP_FAILSAFE_TIMEOUT", 15*time.Minute)
+		addr := enve.StringOr("PROTOCOL_HTTP_SERVE_ADDR", ":8084")
+		readtimeout := enve.DurationOr("PROTOCOL_HTTP_READ_TIMEOUT", 10*time.Second)
+		writetimeout := enve.DurationOr("PROTOCOL_HTTP_WRITE_TIMEOUT", 360*time.Second)
+		idletimeout := enve.DurationOr("PROTOCOL_HTTP_IDLE_TIMEOUT", 180*time.Second)
+		failsafeTimeout := enve.DurationOr("PROTOCOL_HTTP_FAILSAFE_TIMEOUT", 15*time.Minute)
 		server = &http.Server{
 			Addr: addr,
 			// add the connection to the context for later use (logging, tracking, etc)
 			// and also set a failsafe timeout to prevent slowloris-style attacks (or just buggy clients or servers)
 			ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
 				ctx, cancel := context.WithTimeout(ctx, failsafeTimeout)
-				ctx = conndbg.SaveConnCtx(ctx, conn)
 				go func() { // when the context is done, close the connection, regardless of what state it's in.
 					<-ctx.Done()
 					cancel()
@@ -122,7 +115,6 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 				}()
 				return ctx
 			},
-			ConnState:    conndbg.TrackState,
 			Handler:      buildHTTPRouter(logger, db, responseCache),
 			ReadTimeout:  readtimeout,
 			WriteTimeout: writetimeout,
@@ -146,7 +138,7 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 }
 
 func dbFromEnv(ctx context.Context) (*pgxpool.Pool, error) {
-	connstr := enve.StringOr("DATABASE_URL", "") // set by fly.io
+	connstr := enve.StringOr("DATABASE_URL", "")
 	if connstr == "" {
 		return nil, errors.New("DATABASE_URL not set")
 	}
