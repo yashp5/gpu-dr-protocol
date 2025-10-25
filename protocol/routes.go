@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/grene-labs/grene/auth"
 	"github.com/grene-labs/grene/cache"
+	"github.com/grene-labs/grene/control"
 	"github.com/grene-labs/grene/dbutil"
 	"github.com/grene-labs/grene/enve"
 	"github.com/grene-labs/grene/generated/sqlc"
@@ -27,6 +28,7 @@ import (
 	"github.com/grene-labs/grene/logger"
 	"github.com/grene-labs/grene/openapi"
 	"github.com/grene-labs/grene/trace"
+	"github.com/grene-labs/grene/ws"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/klauspost/compress/zstd"
 )
@@ -164,22 +166,23 @@ func buildHTTPRouter(
 			Handler:     http.HandlerFunc(db.Count().ByFuncHandler),
 			Description: "Get a count of queries by function",
 		},
-		// Users
-		// {
-		// 	Method:       http.MethodPost,
-		// 	Path:         "/v1/user",
-		// 	Handler:      user.Create(db),
-		// 	Description:  "Create a new user",
-		// 	AllowedRoles: auth.RoleAdmin,
-		// },
-		// {
-		// 	Method:       http.MethodGet,
-		// 	Path:         "/v1/user/{user_id}",
-		// 	Handler:      user.GetByID(q.GetUserByID),
-		// 	CacheTTL:     5 * time.Second,
-		// 	Description:  "Get user info by user id",
-		// 	AllowedRoles: auth.RoleAdmin,
-		// },
+		// Control
+		{
+			Method:       "POST",
+			Path:         "/v1/control/dispatch",
+			Handler:      control.CreateControlEvent(),
+			Description:  "Create a curtailment event",
+			AllowedRoles: auth.RolePublic,
+		},
+		// Agent
+		{
+			Method:       "GET",
+			Path:         "/v1/agent/subscribe",
+			IsWebsocket:  true,
+			Handler:      ws.Subscribe(),
+			Description:  "Opens a websocket for agent",
+			AllowedRoles: auth.RolePublic,
+		},
 	}
 
 	// build an extra route, /, that returns the list of routes.

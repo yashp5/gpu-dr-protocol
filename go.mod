@@ -4,6 +4,7 @@ go 1.25.1
 
 require (
 	github.com/alexflint/go-filemutex v1.3.0
+	github.com/coder/websocket v1.8.14
 	github.com/dusted-go/logging v1.3.0
 	github.com/fergusstrange/embedded-postgres v1.32.0
 	github.com/go-chi/cors v1.2.2

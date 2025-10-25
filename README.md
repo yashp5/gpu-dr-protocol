@@ -318,6 +318,4 @@ journalctl -u compute-agent -f
 
 ---
 
-## License
 
-MVP reference implementation — for internal testing and pilot evaluations. Configure and operate at your own risk.
