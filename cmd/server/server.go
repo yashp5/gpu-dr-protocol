@@ -1,4 +1,4 @@
-// Runs the Grene protocol.
+// Runs the Grene server.
 package main
 
 import (
@@ -30,7 +30,7 @@ import (
 	"github.com/grene-labs/grene/ddslog"
 	"github.com/grene-labs/grene/enve"
 	"github.com/grene-labs/grene/loglimit"
-	"github.com/grene-labs/grene/protocol"
+	"github.com/grene-labs/grene/server"
 )
 
 // we're not interested in 32-bit portability.
@@ -49,7 +49,7 @@ func main() {
 	os.Setenv(enve.ENVE_LOG_SUCCESS, "true")
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	log.Printf("dora: start: send SIGINT (ctrl+c) to stop")
+	log.Printf("GRENE: start: send SIGINT (ctrl+c) to stop")
 
 	log.Printf("initenv: initializing environment from file %q", "env.json")
 
@@ -61,22 +61,22 @@ func main() {
 	} else if err != nil {
 		log.Panicf("initenv: could not initialize environment from file %q: %v", "env.json", err)
 	}
-	enve.StringOr("DORA_EXAMPLE_KEY", "foo")
+	enve.StringOr("GRENE_EXAMPLE_KEY", "foo")
 
 	log := initlog()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	if err := protocol.Run(ctx, log); err != nil {
-		log.Error("error running dora", "err", err)
+	if err := server.Run(ctx, log); err != nil {
+		log.Error("error running server", "err", err)
 		if errors.Is(err, context.Canceled) {
-			log.Info("dora stopped by signal")
+			log.Info("server stopped by signal")
 		} else {
-			log.Error("dora stopped with error", "err", err)
+			log.Error("server stopped with error", "err", err)
 		}
 		os.Exit(1)
 	} else {
-		log.Info("dora stopped cleanly")
+		log.Info("server stopped cleanly")
 	}
 }
 
@@ -98,7 +98,7 @@ func initlog() (logger *slog.Logger) {
 				default:
 					return slog.LevelInfo, fmt.Errorf("invalid log level %q", s)
 				}
-			}, "DORA_LOG_LEVEL", slog.LevelInfo,
+			}, "GRENE_LOG_LEVEL", slog.LevelInfo,
 		),
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.SourceKey {
@@ -109,12 +109,12 @@ func initlog() (logger *slog.Logger) {
 				// trim the file to the last 3 components, plus a .. if there's more than 3.
 				fn := trimComponents(src.Function, 4)
 				fn = strings.TrimSuffix(fn, "[...]")
-				if _, after, ok := strings.Cut(fn, "dora-network/"); ok {
-					fn = after // trim the dora prefix.
+				if _, after, ok := strings.Cut(fn, "GRENE-network/"); ok {
+					fn = after // trim the GRENE prefix.
 				}
 				file := trimComponents(src.File, 3)
-				if _, after, ok := strings.Cut(file, "dora-network/"); ok {
-					file = after // trim the dora prefix.
+				if _, after, ok := strings.Cut(file, "GRENE-network/"); ok {
+					file = after // trim the GRENE prefix.
 				}
 				a.Value = slog.StringValue(fmt.Sprintf("%s @ %s:%d", fn, file, src.Line))
 			}
@@ -154,9 +154,9 @@ func initlog() (logger *slog.Logger) {
 		handler, err = ddslog.New(context.TODO(), ddslog.Config{
 			APIKey: apiKey,
 			Client: &http.Client{
-				Timeout: enve.DurationOr("DORA_DATADOG_TIMEOUT", 30*time.Second),
+				Timeout: enve.DurationOr("GRENE_DATADOG_TIMEOUT", 30*time.Second),
 			},
-			Target: ddslog.Target(enve.StringOr("DORA_DATADOG_TARGET", string(ddslog.TargetUS3))),
+			Target: ddslog.Target(enve.StringOr("GRENE_DATADOG_TARGET", string(ddslog.TargetUS3))),
 			Opts:   *handlerOpts,
 			Source: "staging",
 			Writer: os.Stderr, // write to stderr as well as to datadog.
@@ -167,9 +167,9 @@ func initlog() (logger *slog.Logger) {
 		log.Printf("could not create datadog logger: %v, falling back to default loggers", err)
 	}
 
-	switch enve.StringOr("DORA_LOG_FORMAT", "json") {
+	switch enve.StringOr("GRENE_LOG_FORMAT", "json") {
 	default:
-		log.Printf("invalid log format %q, using json", enve.StringOr("DORA_LOG_FORMAT", "json"))
+		log.Printf("invalid log format %q, using json", enve.StringOr("GRENE_LOG_FORMAT", "json"))
 		fallthrough
 	case "json":
 		handler = slog.NewJSONHandler(os.Stdout, handlerOpts)
@@ -179,9 +179,9 @@ func initlog() (logger *slog.Logger) {
 		handler = prettylog.New(handlerOpts, prettylog.WithDestinationWriter(os.Stderr))
 	}
 HANDLER_DONE:
-	// DORA-3235: set up a log limiter.
+	// GRENE-3235: set up a log limiter.
 	// see https://pkg.go.dev/gitlab.com/efronlicht/loglimit for all the info you could want on this.
-	if enve.BoolOr("DORA_LOG_LIMITER", true) {
+	if enve.BoolOr("GRENE_LOG_LIMITER", true) {
 		handler = loglimit.MustNew(
 			loglimit.Config{
 				Timing:  time.Tick(time.Minute),
@@ -224,7 +224,7 @@ HANDLER_DONE:
 	hostname, _ := os.Hostname()
 	user, _ := user.Current()
 	instanceID := uuid.Must(uuid.NewV7())
-	crashlogDir := enve.StringOr("DORA_CRASHLOG_DIR", "./crashlog")
+	crashlogDir := enve.StringOr("GRENE_CRASHLOG_DIR", "./crashlog")
 
 	_ = os.MkdirAll(crashlogDir, 0o755)
 	{ // housekeeping: clean up old empty logs
@@ -271,12 +271,12 @@ HANDLER_DONE:
 
 	go func() { // spin up a goroutine to log memory stats.
 
-		if !enve.BoolOr("DORA_LOG_MEMORY_STATS", false) {
+		if !enve.BoolOr("GRENE_LOG_MEMORY_STATS", false) {
 			return
 		}
 		var (
 			memstats runtime.MemStats
-			wait     = enve.DurationOr("DORA_MEMORY_LOG_INTERVAL", 90*time.Second)
+			wait     = enve.DurationOr("GRENE_MEMORY_LOG_INTERVAL", 90*time.Second)
 			group    []any // shared to reduce allocs
 		)
 		buildinfo, ok := debug.ReadBuildInfo()
@@ -290,14 +290,14 @@ HANDLER_DONE:
 			)
 		}
 		logger = logger.With(
-			"env", enve.StringOr("DORA_ENV", "dev"),
+			"env", enve.StringOr("GRENE_ENV", "dev"),
 			slog.Group(
 				"instance",
-				"addr", enve.StringOr("DORA_HTTP_SERVE_ADDR", ":8080"),
+				"addr", enve.StringOr("GRENE_HTTP_SERVE_ADDR", ":8080"),
 				"hostname", hostname,
 				"id", instanceID.String(),
 				"is_test", testing.Testing(),
-				"name", "dora",
+				"name", "GRENE",
 				"outbound_ip", ip,
 				"pid", os.Getpid(),
 				"start", time.Now(),

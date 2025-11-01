@@ -1,4 +1,4 @@
-package protocol
+package server
 
 import (
 	"context"
@@ -34,7 +34,7 @@ func Run(ctx context.Context, logger *slog.Logger) error {
 			}
 		}
 	}()
-	shutdownTime := enve.DurationOr("PROTOCOL_HTTP_SHUTDOWN_TIMEOUT", 5*time.Second)
+	shutdownTime := enve.DurationOr("GRENE_HTTP_SHUTDOWN_TIMEOUT", 5*time.Second)
 	logger.Warn(fmt.Sprintf("got shutdown signal: shutting down in %s", shutdownTime))
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTime)
 	defer cancelShutdown()
@@ -57,9 +57,9 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 	logger.Info("init cache")
 	{ // init cache
 		var (
-			cleanup = enve.DurationOr("PROTOCOL_CACHE_CLEANUP_INTERVAL", 10*time.Minute)
-			cutoff  = enve.DurationOr("PROTOCOL_CACHE_CLEANUP_CUTOFF_AGE", 15*time.Minute)
-			target  = enve.IntOr("PROTOCOL_CACHE_TARGET_SIZE", 100*1024*1024)
+			cleanup = enve.DurationOr("GRENE_CACHE_CLEANUP_INTERVAL", 10*time.Minute)
+			cutoff  = enve.DurationOr("GRENE_CACHE_CLEANUP_CUTOFF_AGE", 15*time.Minute)
+			target  = enve.IntOr("GRENE_CACHE_TARGET_SIZE", 100*1024*1024)
 		)
 		responseCache, _ = cache.NewJSONResponse(
 			cleanup,
@@ -72,10 +72,10 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 	var db *dbutil.LogDB
 	logger.Info("init DB")
 	{ // init DB: either embedded (default) or via google cloud...
-		ctx, cancel := context.WithTimeout(ctx, enve.DurationOr("PROTOCOL_DB_INIT_TIMEOUT", 30*time.Second))
+		ctx, cancel := context.WithTimeout(ctx, enve.DurationOr("GRENE_DB_INIT_TIMEOUT", 30*time.Second))
 		defer cancel()
 		var pool *pgxpool.Pool
-		if enve.BoolOr("PROTOCOL_USE_EMBEDDED_DB", true) {
+		if enve.BoolOr("GRENE_USE_EMBEDDED_DB", true) {
 			var err error
 			pool, err = dbutil.DialEmbeddedPool(ctx)
 			if err != nil {
@@ -97,11 +97,11 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 	logger.Info("init server")
 	// init server
 	{
-		addr := enve.StringOr("PROTOCOL_HTTP_SERVE_ADDR", ":8084")
-		readtimeout := enve.DurationOr("PROTOCOL_HTTP_READ_TIMEOUT", 10*time.Second)
-		writetimeout := enve.DurationOr("PROTOCOL_HTTP_WRITE_TIMEOUT", 360*time.Second)
-		idletimeout := enve.DurationOr("PROTOCOL_HTTP_IDLE_TIMEOUT", 180*time.Second)
-		failsafeTimeout := enve.DurationOr("PROTOCOL_HTTP_FAILSAFE_TIMEOUT", 15*time.Minute)
+		addr := enve.StringOr("GRENE_HTTP_SERVE_ADDR", ":8084")
+		readtimeout := enve.DurationOr("GRENE_HTTP_READ_TIMEOUT", 10*time.Second)
+		writetimeout := enve.DurationOr("GRENE_HTTP_WRITE_TIMEOUT", 360*time.Second)
+		idletimeout := enve.DurationOr("GRENE_HTTP_IDLE_TIMEOUT", 180*time.Second)
+		failsafeTimeout := enve.DurationOr("GRENE_HTTP_FAILSAFE_TIMEOUT", 15*time.Minute)
 		server = &http.Server{
 			Addr: addr,
 			// add the connection to the context for later use (logging, tracking, etc)
@@ -122,7 +122,7 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 		}
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	_, cancel := context.WithCancel(ctx)
 	cleanup = append(cleanup, func() error { cancel(); return nil })
 	go func() {
 		logger.Info("serving HTTP at " + server.Addr)

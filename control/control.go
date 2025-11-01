@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grene-labs/grene/http/writeresp"
+	"github.com/grene-labs/grene/ocp"
 	"github.com/grene-labs/grene/ws"
 )
 
@@ -26,29 +27,12 @@ const (
 	EventStateCancelled EventState = "CANCELLED"
 )
 
-type AgentState string
-
-const (
-	AgentStateIdle      AgentState = "IDLE"
-	AgentStatePending   AgentState = "PENDING"
-	AgentStateRamping   AgentState = "RAMPING"
-	AgentStateHolding   AgentState = "HOLDING"
-	AgentStateRestoring AgentState = "RESTORING"
-	AgentStateSafeRest  AgentState = "SAFE_RESTORE"
-)
-
-// GPUSelector identifies a GPU on a node either by index or UUID.
-type GPUSelector struct {
-	Index *int   `json:"index,omitempty"`
-	UUID  string `json:"uuid,omitempty"`
-}
-
 // TargetSpec is a per-node, per-GPU curtailment target.
 type TargetSpec struct {
-	Node         string      `json:"node"`
-	GPUSelector  GPUSelector `json:"gpu_selector"`
-	TargetCapW   int         `json:"target_cap_w"` // watts
-	TargetReason string      `json:"target_reason,omitempty"`
+	Node         string          `json:"node"`
+	GPUSelector  ocp.GPUSelector `json:"gpu_selector"`
+	TargetCapW   int             `json:"target_cap_w"` // watts
+	TargetReason string          `json:"target_reason,omitempty"`
 }
 
 // EventWindow defines start/end and ramp.
@@ -78,13 +62,13 @@ type MVSummary struct {
 
 // AgentEventStatus is per-agent (per GPU) live state.
 type AgentEventStatus struct {
-	Node            string     `json:"node"`
-	GPUIndex        int        `json:"gpu_index"`
-	Vendor          string     `json:"vendor,omitempty"` // "nvidia" | "amd"
-	State           AgentState `json:"state"`
-	LastPowerW      float64    `json:"last_power_w,omitempty"`
-	CapW            int        `json:"cap_w,omitempty"`
-	LastTelemetryAt time.Time  `json:"last_telemetry_at,omitempty"`
+	Node            string         `json:"node"`
+	GPUIndex        int            `json:"gpu_index"`
+	Vendor          string         `json:"vendor,omitempty"` // "nvidia" | "amd"
+	State           ocp.AgentState `json:"state"`
+	LastPowerW      float64        `json:"last_power_w,omitempty"`
+	CapW            int            `json:"cap_w,omitempty"`
+	LastTelemetryAt time.Time      `json:"last_telemetry_at,omitempty"`
 }
 
 // ---------- Create / Modify Dispatch ----------
@@ -120,17 +104,6 @@ type GetControlEventStateResponse struct {
 }
 
 // ---------- Handlers ----------
-
-type dispatchCommand struct {
-	Type       string      `json:"type"`
-	EventID    string      `json:"event_id"`
-	StartAt    time.Time   `json:"start_at"`
-	EndAt      time.Time   `json:"end_at"`
-	RampS      int         `json:"ramp_s"`
-	TargetCapW int         `json:"target_cap_w"`
-	Node       string      `json:"node"`
-	GPU        GPUSelector `json:"gpu_selector"`
-}
 
 func CreateControlEvent() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -180,8 +153,7 @@ func CreateControlEvent() http.HandlerFunc {
 			}
 			applied = append(applied, label)
 
-			cmd := dispatchCommand{
-				Type:       "dispatch",
+			cmd := ocp.SetCurtailmentProfileRequest{
 				EventID:    req.EventID,
 				StartAt:    start,
 				EndAt:      end,
@@ -190,7 +162,16 @@ func CreateControlEvent() http.HandlerFunc {
 				Node:       t.Node,
 				GPU:        t.GPUSelector,
 			}
-			queued, matched := ws.Publish(ws.AgentKey{Node: t.Node, GPUIndex: t.GPUSelector.Index, GPUUUID: t.GPUSelector.UUID}, cmd)
+			messageID, err := ocp.NewMessageID()
+			if err != nil {
+				writeresp.JSONErr(r.Context(), w, fmt.Errorf("generate message id: %w", err), http.StatusInternalServerError)
+				return
+			}
+			queued, matched, err := ws.PublishCall(ws.AgentKey{Node: t.Node, GPUIndex: t.GPUSelector.Index, GPUUUID: t.GPUSelector.UUID}, messageID, ocp.ActionSetCurtailmentProfile, cmd)
+			if err != nil {
+				writeresp.JSONErr(r.Context(), w, fmt.Errorf("dispatch SetCurtailmentProfile: %w", err), http.StatusInternalServerError)
+				return
+			}
 			queuedTotal += queued
 			sentTotal += queued
 			if matched == 0 {
