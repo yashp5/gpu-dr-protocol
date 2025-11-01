@@ -14,7 +14,7 @@ const (
 	ActionBootNotification        = "BootNotification"
 	ActionHeartbeat               = "Heartbeat"
 	ActionStatusNotification      = "StatusNotification"
-	ActionMeterValues             = "MeterValues"
+	ActionTelemetry               = "Telemetry"
 	ActionSetCurtailmentProfile   = "SetCurtailmentProfile"
 	ActionClearCurtailmentProfile = "ClearCurtailmentProfile"
 )
@@ -81,7 +81,7 @@ type StatusNotificationRequest struct {
 
 type StatusNotificationResponse struct{}
 
-type MeterValuesRequest struct {
+type TelemetryRequest struct {
 	Node        string      `json:"node"`
 	GPU         GPUSelector `json:"gpu"`
 	TS          time.Time   `json:"ts"`
@@ -93,7 +93,7 @@ type MeterValuesRequest struct {
 	EventState  string      `json:"event_state,omitempty"`
 }
 
-type MeterValuesResponse struct{}
+type TelemetryResponse struct{}
 
 type SetCurtailmentProfileRequest struct {
 	EventID    string      `json:"event_id"`

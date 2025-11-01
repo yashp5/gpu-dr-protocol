@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"time"
 
@@ -101,20 +100,10 @@ func Start(ctx context.Context, logger *slog.Logger) (server *http.Server, clean
 		readtimeout := enve.DurationOr("GRENE_HTTP_READ_TIMEOUT", 10*time.Second)
 		writetimeout := enve.DurationOr("GRENE_HTTP_WRITE_TIMEOUT", 360*time.Second)
 		idletimeout := enve.DurationOr("GRENE_HTTP_IDLE_TIMEOUT", 180*time.Second)
-		failsafeTimeout := enve.DurationOr("GRENE_HTTP_FAILSAFE_TIMEOUT", 15*time.Minute)
 		server = &http.Server{
 			Addr: addr,
 			// add the connection to the context for later use (logging, tracking, etc)
 			// and also set a failsafe timeout to prevent slowloris-style attacks (or just buggy clients or servers)
-			ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
-				ctx, cancel := context.WithTimeout(ctx, failsafeTimeout)
-				go func() { // when the context is done, close the connection, regardless of what state it's in.
-					<-ctx.Done()
-					cancel()
-					_ = conn.Close()
-				}()
-				return ctx
-			},
 			Handler:      buildHTTPRouter(logger, db, responseCache),
 			ReadTimeout:  readtimeout,
 			WriteTimeout: writetimeout,

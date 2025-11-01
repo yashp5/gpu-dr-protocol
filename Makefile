@@ -15,7 +15,7 @@
 #   Anything that's even slightly complicated is usually better farmed out to it's own script you just call.
 #   Unfortunately, every other build system seems worse somehow.
 
-export PROTOCOL_LOG=PRETTY # set the log format to pretty, can be changed to JSON or other formats
+export GRENE_LOG=PRETTY # set the log format to pretty, can be changed to JSON or other formats
 export GOPRIVATE="github.com/grene-labs/*" # set the private go module path so "go get" and "go mod tidy" work
 export POSTGRES_USER=postgres
 export POSTGRES_PASSWORD=postgres
@@ -32,7 +32,7 @@ run: build
 build: godeps gensqlc
 	# ----- make build -----
 	# build the application
-	go build -trimpath -o grene ./cmd/protocol
+	go build -trimpath -o grene ./cmd/server
 
 # generate Go code from SQL queries using sqlc,
 # then copy the schema over to dbutil for embedding into the binary so we can bootstrap the embedded database.

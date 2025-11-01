@@ -77,7 +77,7 @@ type pingStatDB interface {
 func healthcheckHandler(db pingStatDB) http.HandlerFunc {
 	// Run health checks every 10 seconds.
 	go func() {
-		d := enve.DurationOr("PROTOCOL_HEALTHCHECK_INTERVAL", 10*time.Second)
+		d := enve.DurationOr("GRENE_HEALTHCHECK_INTERVAL", 10*time.Second)
 		for range time.Tick(d) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

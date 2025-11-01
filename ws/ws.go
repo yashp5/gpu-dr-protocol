@@ -274,14 +274,14 @@ func handleAgentCall(cl *client, frame ocp.IncomingFrame) {
 		}
 		cl.log.Info("status notification", "node", req.Node, "gpu_index", req.GPU.Index, "gpu_uuid", req.GPU.UUID, "status", req.Status, "event_id", req.EventID, "timestamp", req.Timestamp)
 		cl.sendCallResult(frame.UniqueID, ocp.StatusNotificationResponse{})
-	case ocp.ActionMeterValues:
-		var req ocp.MeterValuesRequest
+	case ocp.ActionTelemetry:
+		var req ocp.TelemetryRequest
 		if err := json.Unmarshal(frame.Payload, &req); err != nil {
-			cl.sendCallError(frame.UniqueID, ocp.ErrorCodeFormatViolation, "invalid MeterValues payload", map[string]any{"error": err.Error()})
+			cl.sendCallError(frame.UniqueID, ocp.ErrorCodeFormatViolation, "invalid Telemetry payload", map[string]any{"error": err.Error()})
 			return
 		}
 		cl.log.Info(
-			"meter values",
+			"telemetry",
 			"node", req.Node,
 			"gpu_index", req.GPU.Index,
 			"gpu_uuid", req.GPU.UUID,
@@ -293,7 +293,7 @@ func handleAgentCall(cl *client, frame ocp.IncomingFrame) {
 			"event_state", req.EventState,
 			"timestamp", req.TS,
 		)
-		cl.sendCallResult(frame.UniqueID, ocp.MeterValuesResponse{})
+		cl.sendCallResult(frame.UniqueID, ocp.TelemetryResponse{})
 	default:
 		cl.log.Warn("unsupported agent action", "action", frame.Action)
 		cl.sendCallError(frame.UniqueID, ocp.ErrorCodeNotImplemented, fmt.Sprintf("unsupported action %q", frame.Action), map[string]any{"action": frame.Action})
