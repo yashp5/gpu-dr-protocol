@@ -1,321 +1,235 @@
 # Grene Protocol
 
-Make a single GPU behave like a **dispatchable load** for the grid.
-This MVP lets an external party (e.g., a DR aggregator) call a **/dispatch** webhook, and your **node agent** safely throttles the GPU (via NVML power caps) with ramps, telemetry, and auto-restore. A small dashboard shows what happened in real time.
-
-> ⚠️ Requires root on the GPU host and an NVIDIA GPU that supports **power management limits**.
-
----
-
-## What you get
-
-* **Control API**: receives signed DR events → translates to per-GPU setpoints → tracks state & M&V.
-* **Node Agent (systemd)**: runs on the GPU host, applies power caps & streams telemetry.
-* **Metrics & M&V**: Prometheus metrics + a simple event report (baseline vs actual, delivered kW).
-* **Demo flow**: `POST /dispatch` → ramp to cap → hold → auto-restore → download M&V CSV.
+Grene is a prototype control plane for treating GPUs as dispatchable electrical loads. A control
+server speaks a lightweight "Open Compute Protocol" (OCP) over websockets with agents running next to
+GPUs. Dispatch commands lower a GPU power cap, the agent ramps and holds the new limit, publishes
+telemetry, and restores the previous setting when the event ends or errors occur.
 
 ---
 
-## Quick start (10–15 minutes)
+## What works today
 
-1. **Verify your GPU supports capping**
+- **Control server (`./cmd/server`)**
+  - Serves REST `POST /v1/control/dispatch` for issuing curtailment events.
+  - Hosts the agent websocket at `GET /v1/agent/subscribe`.
+  - Fans out OCP messages (`SetCurtailmentProfile`, `Telemetry`, `StatusNotification`, `Heartbeat`).
+  - Logs every incoming/outgoing frame with optional pretty/JSON output.
 
-```bash
-nvidia-smi -q -d POWER | egrep -i 'Power Management|Default Power Limit|Min Power Limit|Max Power Limit'
-sudo nvidia-smi -pm 1   # enable persistence mode
-nvidia-smi --query-gpu=power.limit,power.default_limit --format=csv
+- **Node agent (`./cmd/agent`)**
+  - Connects to the server websocket and registers its node name.
+  - Accepts curtailment profiles with start, end, ramp seconds, and target cap watts.
+  - Applies linear ramps to the GPU power limit via `nvidia-smi -pl` (or a mock driver).
+  - Streams telemetry (power draw, power cap, utilization %, temperature °C, event metadata).
+  - Sends periodic heartbeats and status transitions; auto-restores on completion or failure.
+  - Detailed ramp logging to show every intermediate setpoint.
+
+- **Mock GPU mode** (`-mock-gpu`)
+  - Lets you run the entire flow without `nvidia-smi` by simulating power limits and telemetry.
+
+What’s intentionally *not* here yet: authentication, dashboards, Prometheus/M&V storage, signed
+dispatches, systemd packaging, or multi-node orchestration. The README focuses on the pieces that
+already exist in this repository.
+
+---
+
+## Repository tour
+
+```
+cmd/server/      Control server entrypoint
+cmd/agent/       Node agent entrypoint
+ocp/             Message types and helpers for the OCP wire protocol
+ws/              Websocket hub used by the server
+server/          HTTP server wiring and configuration
 ```
 
-If **Power Management: Supported** and you see **Min/Max Power Limit**, you’re good.
+---
 
-2. **Run a steady GPU load** (to make the cap “bite”)
-   Use any inference loop, `gpu-burn`, etc.
+## Prerequisites
 
-3. **Start the Control API** (binds on `:8080` by default)
+- Go 1.21+
+- Git and Make (optional, but `make build` is convenient)
+- For real hardware testing: an NVIDIA GPU with power management limits exposed via `nvidia-smi`
+  and root privileges to adjust power caps.
 
-4. **Install & start the Node Agent (systemd, root)**
-   The agent will register with Control, report capabilities (min/max cap), and begin telemetry.
-
-5. **Trigger a dispatch (event starts in 30s, ramps 60s, holds 10m)**
+Recommended checks on a GPU host:
 
 ```bash
-ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ" -d "+30 seconds")
-cat > body.json <<'EOF'
-{
-  "event_id": "evt_demo_001",
-  "program": "NYISO_DR_PILOT",
-  "site_id": "site_local_01",
-  "start_at": "__START_AT__",
-  "duration_s": 600,
-  "target_cap_w": 160,
-  "ramp_s": 60,
-  "reason": "system_peak"
-}
-EOF
-# Replace start time
-sed -i'' "s/__START_AT__/$ts/g" body.json
-
-# Sign the request (HMAC-SHA256 over "<timestamp>.<body>"), then send:
-TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-SIG=$(printf "%s.%s" "$TS" "$(cat body.json)" | openssl dgst -sha256 -hmac "$HMAC_SECRET" -binary | base64)
-
-curl -sS -X POST http://CONTROL_HOST:8080/dispatch \
-  -H "Content-Type: application/json" \
-  -H "X-Dispatch-Timestamp: $TS" \
-  -H "X-Dispatch-Signature: $SIG" \
-  --data @body.json
+nvidia-smi -q -d POWER | egrep -i 'Power Management|Power Limit'
+sudo nvidia-smi -pm 1              # enable persistence mode
+nvidia-smi --query-gpu=power.limit,power.min_limit,power.max_limit --format=csv
 ```
-
-6. **Observe**
-
-* Power draw trends to **~160 W** within the 60s ramp.
-* After 10m, agent **auto-restores** to the prior limit.
-* Query status: `GET /events/evt_demo_001`
-* Scrape metrics: `GET /metrics` (Prometheus format)
 
 ---
 
-## Architecture
+## Quick start (mock GPU)
+
+```bash
+# Clone
+git clone https://github.com/grene-labs/grene
+cd grene
+
+# Build (optional; go run also works)
+make build
+
+# Terminal 1 – run the control server
+GRENE_LOG_FORMAT=json ./grene       # or: go run ./cmd/server
+
+# Terminal 2 – run an agent in mock mode
+ENVE_LOG_DISABLED=true \
+  go run ./cmd/agent \
+    -mock-gpu \
+    -server http://localhost:8084/v1/agent/subscribe \
+    -node node-01 \
+    -log-format json \
+    -log-level info | jq -CR '.'
+
+# Terminal 3 – trigger a curtailment
+START=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+END=$(date -u -d '+2 minutes' +"%Y-%m-%dT%H:%M:%SZ")
+
+curl -sS -X POST http://localhost:8084/v1/control/dispatch \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"event_id\": \"demo-$(date +%s)\",
+    \"start_at\": \"${START}\",
+    \"end_at\": \"${END}\",
+    \"ramp_s\": 10,
+    \"targets\": [
+      {
+        \"node\": \"node-01\",
+        \"gpu_selector\": {\"index\": 0},
+        \"target_cap_w\": 180
+      }
+    ],
+    \"reason\": \"test curtailment\"
+  }"
+```
+
+Expected behavior:
+
+- The agent logs an inbound `SetCurtailmentProfile`, a series of `ramp power step` entries, then
+  switches to `STATE=HOLDING`.
+- Telemetry messages show `cap_w` dropping to the requested target and `power_w` tracking ~85 % of the cap
+  (mock driver behavior).
+- When `end_at` arrives the agent emits `RESTORING → IDLE` and restores the previous cap.
+
+---
+
+## Future integration overview
 
 ```mermaid
 graph LR
-  A[Utility / ISO / Aggregator]
-  B[Control API]
-  C[Node Agent]
-  D[GPU]
-  E[Prometheus]
-  F[Grafana]
-
-  A -- "webhook / DR event" --> B
-  B -. "status / M&V" .-> A
-
-  B -- "commands (cap, ramp, start, duration)" --> C
-  C -- "NVML" --> D
-
-  C -- "telemetry (power, cap, util, temp)" --> E
-  E --> F
+  A[Grid / ISO / VPP]
+  A -- OpenADR / DR Events --> B(Control Server)
+  B -- Custom Protocol (SetCurtailmentProfile) --> C(Node Agent)
+  C -- Nvidia SMI/Amd ROCm --> D[GPU Host]
+  C -- Telemetry --> B
+  B -- Status / M&V APIs --> A
+  B -- Metrics / Observability --> E[Monitoring]
 ```
 
+---
+
+## Running against a real GPU
+
+On a GPU host (bare metal, Vast.ai instance, etc.):
+
+1. Install Go and clone the repo as above.
+2. Build the binaries or use `go run`.
+3. Start the server (`./grene`).
+4. Start the agent **without** `-mock-gpu` so it talks to `nvidia-smi`:
+
+   ```bash
+   sudo -E ./grene-agent \
+     -server http://localhost:8084/v1/agent/subscribe \
+     -node gpu-node-01 \
+     -log-format json | jq -CR '.'
+   ```
+
+   Running as root (or with sufficient privileges) is required for `nvidia-smi -pl`.
+5. Issue dispatches as before. Logs will now reflect actual power draw and caps reported by the GPU.
 
 ---
 
-## Components
+## API reference (current MVP)
 
-### Control API (central brain)
+### `POST /v1/control/dispatch`
 
-* **Endpoints**
-
-  * `POST /dispatch` — receive signed DR events.
-  * `GET /events/:id` — live status + M&V snapshot.
-  * `GET /metrics` — Prometheus metrics.
-  * `GET /health` — liveness.
-* **Responsibilities**
-
-  * Verify **HMAC** signature & timestamp freshness.
-  * Translate event → **target_cap_w** (+ clamp to device bounds).
-  * Send setpoint/ramp to agent; track state machine & timeouts.
-  * Compute **baseline vs actual** and **delivered kW** for M&V.
-  * Persist events/samples/audit in **SQLite**.
-
-### Node Agent (systemd, root)
-
-* **Responsibilities**
-
-  * Discover GPU (UUID, min/max cap), record current cap.
-  * Apply **linear ramp** to target cap; hold for duration; restore.
-  * Stream 1–2s **telemetry** (power_w, cap_w, util%, temp_c, pstate, throttle_flags).
-  * **Failsafe:** safe restore if heartbeat lost or errors occur.
-* **Local endpoints**
-
-  * `GET /metrics` (Prometheus).
-  * `GET /healthz`, `GET /state` (debug snapshot).
-
----
-
-## Configuration
-
-### Control API (`.env` or flags)
-
-* `BIND_ADDR` (default `:8080`)
-* `HMAC_SECRET` (required)
-* `DB_PATH` (SQLite path, default `./control.db`)
-* `AGENT_TOKEN` or mTLS certs for agent auth
-* `SITE_ID` (label in metrics/M&V)
-* `GPU_RATED_POWER_W` (for kW ↔ W conversions if using `target_curtail_kw`)
-
-### Node Agent (`/etc/compute-agent/config.yaml`)
-
-* `control_url: https://control.example.com:8080`
-* `auth_token: "..."` (or mTLS client certs)
-* `gpu_selector: { uuid: "..."} # or { index: 0 }`
-* `min_cap_w: 120` | `max_cap_w: 300` (optional clamps; auto-read from NVML anyway)
-* `sample_interval_s: 1`
-* `heartbeat_interval_s: 5`
-* `restore_on_exit: true`
-* `ramp_step_s: 1` (ramp tick)
-* `timeout_s: 90` (no heartbeat ⇒ restore)
-
----
-
-## API contracts (MVP)
-
-### `POST /dispatch` (Control API)
-
-Headers:
-
-* `X-Dispatch-Timestamp: 2025-09-06T17:30:00Z`
-* `X-Dispatch-Signature: base64(hmac_sha256(secret, "<timestamp>.<body>"))`
-
-Body (choose **one** of `target_cap_w` or `target_curtail_kw`):
+Dispatches curtailment commands to matching agents.
 
 ```json
 {
-  "event_id": "evt_123",
-  "program": "NYISO_DR_PILOT",
-  "site_id": "site_nyc_01",
-  "start_at": "2025-09-06T17:30:00Z",
-  "duration_s": 1800,
-  "ramp_s": 60,
-  "target_cap_w": 160,
-  "reason": "system_peak",
-  "notes": "demo"
+  "event_id": "demo-123",
+  "start_at": "2025-11-01T20:30:00Z",
+  "end_at": "2025-11-01T20:32:00Z",
+  "ramp_s": 10,
+  "targets": [
+    {
+      "node": "node-01",
+      "gpu_selector": {"index": 0},
+      "target_cap_w": 180
+    }
+  ],
+  "reason": "system_test",
+  "notes": "optional"
 }
 ```
 
-### Command to Agent (conceptual)
+Successful requests return HTTP 202 with a summary of fan-out results (queued vs. missing agents).
+Currently there is no authentication – only use on trusted networks.
 
-```json
-{
-  "event_id": "evt_123",
-  "start_at": "2025-09-06T17:30:00Z",
-  "duration_s": 1800,
-  "ramp_s": 60,
-  "target_cap_w": 160
-}
-```
+### `GET /v1/agent/subscribe`
 
-### Telemetry from Agent → Control (example sample)
+Upgraded to a websocket connection. Agents append `?node=<name>` (the agent does this automatically).
+OCP messages are JSON arrays under the hood; the helpers in `ocp/` encode/decode actions.
+
+### Telemetry sample
 
 ```json
 {
   "node": "node-01",
-  "gpu_uuid": "GPU-XXXX",
-  "ts": "2025-09-06T17:30:45Z",
-  "power_w": 171.4,
+  "gpu": { "index": 0 },
+  "ts": "2025-11-01T20:32:14Z",
+  "power_w": 153.4,
   "power_cap_w": 180,
-  "util_percent": 87,
-  "temp_c": 66,
-  "pstate": "P2",
-  "throttle_flags": ["SW_POWER_CAP"],
-  "event_state": "RAMPING",
-  "event_id": "evt_123"
+  "util_percent": 60,
+  "temp_c": 65,
+  "event_id": "curtail-1762029089",
+  "event_state": "ACTIVE"
 }
 ```
 
 ---
 
-## M&V (Measurement & Verification)
+## Configuration knobs
 
-* **Baseline (W):** trailing **10-minute** average power before `start_at`.
-* **Actual (W):** average power during the event window.
-* **Delivered (kW):** `max(0, (Baseline - Actual) / 1000)`.
-* **Response time (s):** (command accepted → first downward power movement) and (command → cap reached).
-* Export a CSV per event with columns:
-
-  * `ts,power_w,cap_w,util_percent,temp_c,event_state`
-  * Footer: `baseline_w,actual_w,delivered_kw,response_first_s,response_full_s`
-
----
-
-## Prometheus metrics (names & labels)
-
-**Agent**
-
-* `gpu_power_watts{node,gpu_uuid}`
-* `gpu_power_cap_watts{node,gpu_uuid}`
-* `gpu_utilization_percent{node,gpu_uuid}`
-* `gpu_temperature_celsius{node,gpu_uuid}`
-* `gpu_event_state{node,gpu_uuid,event_id}` (0 idle, 1 pending, 2 ramping, 3 holding, 4 restoring)
-* `gpu_nvml_last_rc{node,gpu_uuid}` (0 ok, otherwise last NVML error code)
-
-**Control**
-
-* `control_event_active{event_id,site_id}` (0/1)
-* `control_event_target_cap_watts{event_id,site_id}`
-* `control_event_delivered_kw{event_id,site_id}`
-* `control_event_response_seconds{event_id,kind="first|full"}`
-* `control_api_requests_total{route,code}`
-* `control_api_signature_fail_total`
-* `control_agent_heartbeats{node}`
+| Component | Flag / Env | Description |
+|-----------|------------|-------------|
+| Server | `GRENE_HTTP_SERVE_ADDR` | Bind address (default `:8084`). |
+| Server | `GRENE_LOG_FORMAT` | `json`, `text`, or `pretty`. |
+| Server | `GRENE_LOG_LEVEL` | `debug`, `info`, `warn`, `error`. |
+| Agent  | `-server` | Control server websocket URL. |
+| Agent  | `-node` | Node name reported to the server (default `node-01`). |
+| Agent  | `-mock-gpu` | Use the in-memory mock driver (default `false`). |
+| Agent  | `-ramp-step-s` | Ramp tick duration (default `1`). |
+| Agent  | `-restore-on-exit` | Restore original cap when the agent exits (default `true`). |
+| Agent  | `-log-format`, `-log-level` | Same options as the server. |
+| Agent  | `ENVE_LOG_DISABLED=true` | Suppress env var warnings when running locally. |
 
 ---
 
-## Systemd (Node Agent)
-
-`/etc/systemd/system/compute-agent.service`
-
-```ini
-[Unit]
-Description=Compute DR Node Agent
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/local/bin/compute-agent --config /etc/compute-agent/config.yaml
-Restart=always
-RestartSec=2
-# Needs NVML access; if running in a container, use --privileged + NVIDIA runtime.
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable & run:
+## Development
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now compute-agent
-journalctl -u compute-agent -f
+# Format
+gofmt -w ./cmd ./server ./ws ./ocp
+
+# Tests
+go test ./...
+
+# Lint (optional)
+go vet ./...
 ```
 
----
-
-## Acceptance criteria (for your demo)
-
-* **Cap works:** During a dispatch, GPU power follows the **ramp → target cap** within tolerance.
-* **Auto-restore:** After `duration_s`, previous cap is restored even if Control is down.
-* **M&V available:** `GET /events/:id` shows baseline, actual, delivered kW, response times; CSV downloadable.
-* **Observability:** Prometheus shows a continuous trace; Grafana panels visualize Power vs Cap with event overlays.
-
----
-
-## Safety & limits
-
-* Agent clamps `target_cap_w` to NVML **min/max**.
-* If NVML errors or heartbeat loss > `timeout_s`, agent **SAFE_RESTORE** and reports error.
-* Consumer GPUs or laptops may not support `-pl`; use clock-lock fallback only if explicitly enabled.
-* Running as root is required to change power limits—keep the agent small and auditable.
-
----
-
-## Troubleshooting
-
-* **“Power Management: Not Supported”** → Your GPU/driver blocks capping. Use a server GPU or enable clock-lock fallback.
-* **“Insufficient Permissions”** → Run agent as root; if containerized, add `--privileged` and NVIDIA runtime.
-* **Power doesn’t drop** → Ensure a steady load; otherwise the cap might not bind (idle GPU will draw below the cap).
-* **Erratic power** → Increase ramp time; optionally lock clocks to stabilize near the cap.
-
----
-
-## Roadmap (post-MVP)
-
-* OpenADR VEN client in Control to receive real DR signals.
-* Price- or carbon-aware dispatch (NYISO DA/RT, grid intensity).
-* HPC integrations (Slurm Prolog/Epilog or SPANK).
-* Multi-GPU/node orchestration and priority policies.
-
----
 
 
