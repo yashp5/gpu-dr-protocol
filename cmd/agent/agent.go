@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -635,10 +636,14 @@ func (nvidiaSMIDriver) QueryPowerLimits(ctx context.Context, device string) (pow
 	if len(rec) < 3 {
 		return powerLimits{}, errors.New("unexpected nvidia-smi output")
 	}
-	minW, _ := strconv.Atoi(strings.TrimSpace(rec[0]))
-	maxW, _ := strconv.Atoi(strings.TrimSpace(rec[1]))
-	currW, _ := strconv.Atoi(strings.TrimSpace(rec[2]))
-	return powerLimits{MinW: minW, MaxW: maxW, CurrentW: currW}, nil
+	minWf, _ := strconv.ParseFloat(strings.TrimSpace(rec[0]), 64)
+	maxWf, _ := strconv.ParseFloat(strings.TrimSpace(rec[1]), 64)
+	currWf, _ := strconv.ParseFloat(strings.TrimSpace(rec[2]), 64)
+	return powerLimits{
+		MinW:     int(math.Round(minWf)),
+		MaxW:     int(math.Round(maxWf)),
+		CurrentW: int(math.Round(currWf)),
+	}, nil
 }
 
 func (nvidiaSMIDriver) SetPowerLimit(ctx context.Context, device string, watts int) error {
@@ -668,9 +673,24 @@ func (nvidiaSMIDriver) QueryTelemetry(ctx context.Context, device string) (power
 		return
 	}
 	powerW, _ = strconv.ParseFloat(strings.TrimSpace(rec[0]), 64)
-	capW, _ = strconv.Atoi(strings.TrimSpace(rec[1]))
-	util, _ = strconv.Atoi(strings.TrimSpace(rec[2]))
-	temp, _ = strconv.Atoi(strings.TrimSpace(rec[3]))
+	capF, errCap := strconv.ParseFloat(strings.TrimSpace(rec[1]), 64)
+	if errCap != nil {
+		err = errCap
+		return
+	}
+	capW = int(math.Round(capF))
+	utilF, errUtil := strconv.ParseFloat(strings.TrimSpace(rec[2]), 64)
+	if errUtil != nil {
+		err = errUtil
+		return
+	}
+	util = int(math.Round(utilF))
+	tempF, errTemp := strconv.ParseFloat(strings.TrimSpace(rec[3]), 64)
+	if errTemp != nil {
+		err = errTemp
+		return
+	}
+	temp = int(math.Round(tempF))
 	return
 }
 
