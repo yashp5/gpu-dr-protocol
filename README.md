@@ -1,6 +1,6 @@
-# Grene Protocol
+# GPU Demand Response Protocol
 
-Grene is a prototype control plane for treating GPUs as dispatchable electrical loads. A control
+This is a prototype control plane for treating GPUs as dispatchable electrical loads. A control
 server speaks a lightweight "Open Compute Protocol" (OCP) over websockets with agents running next to
 GPUs. Dispatch commands lower a GPU power cap, the agent ramps and holds the new limit, publishes
 telemetry, and restores the previous setting when the event ends or errors occur.
